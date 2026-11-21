@@ -1,0 +1,4 @@
+name: korz-epaper
+build:
+  cmake: .
+  kconfig: Kconfig
