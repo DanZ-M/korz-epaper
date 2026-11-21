@@ -1,0 +1,47 @@
+config KORZ_EPD_REFRESH
+	bool "e-paper: partial updates plus a periodic full refresh against ghosting"
+	default y
+	depends on ZMK_DISPLAY && DT_HAS_SOLOMON_SSD1681_ENABLED
+
+if KORZ_EPD_REFRESH
+
+config KORZ_EPD_FULL_IDLE_S
+	int "Full refresh after this many seconds without changes"
+	default 20
+	range 1 3600
+
+config KORZ_EPD_FULL_AFTER_CHANGES
+	int "Full refresh after this many changes in a row (0 = only when idle)"
+	default 12
+	range 0 1000
+
+config KORZ_EPD_CLEAN_LOCAL
+	bool "Clean only the area that changed (custom status screen) instead of the whole panel"
+	default y
+	depends on KORZ_EPD_SCREEN
+	help
+	  The clean-up drives just the changed area black, then white, then draws it again; the
+	  rest of the panel does not flash. Off = the whole panel does a full refresh.
+
+endif # KORZ_EPD_REFRESH
+
+config KORZ_EPD_SCREEN
+	bool "e-paper: status screen with the widgets of the old left OLED"
+	depends on ZMK_DISPLAY && ZMK_DISPLAY_STATUS_SCREEN_CUSTOM
+	select LV_USE_IMAGE
+	select ZMK_WPM
+	help
+	  Battery, output (USB / Bluetooth), profile, the layers on a sphere and the pet, drawn for a 200x200
+	  panel. Needs CONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y.
+
+if KORZ_EPD_SCREEN
+
+config KORZ_EPD_PET_WALK_WPM
+	int "Typing speed (WPM) from which the pet walks"
+	default 10
+
+config KORZ_EPD_PET_RUN_WPM
+	int "Typing speed (WPM) from which the pet runs"
+	default 50
+
+endif # KORZ_EPD_SCREEN
