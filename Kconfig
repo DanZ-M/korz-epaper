@@ -26,22 +26,27 @@ config KORZ_EPD_CLEAN_LOCAL
 endif # KORZ_EPD_REFRESH
 
 config KORZ_EPD_SCREEN
-	bool "e-paper: status screen with the widgets of the old left OLED"
+	bool "e-paper: status screen (battery, output, profile, layers sphere, volume, halves)"
 	depends on ZMK_DISPLAY && ZMK_DISPLAY_STATUS_SCREEN_CUSTOM
 	select LV_USE_IMAGE
-	select ZMK_WPM
 	help
-	  Battery, output (USB / Bluetooth), profile, the layers on a sphere and the pet, drawn for a 200x200
-	  panel. Needs CONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y.
+	  Drawn for a 200x200 panel; positions are in src/epd_layout.h. Needs
+	  CONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y.
 
 if KORZ_EPD_SCREEN
 
-config KORZ_EPD_PET_WALK_WPM
-	int "Typing speed (WPM) from which the pet walks"
-	default 10
+config KORZ_EPD_SIDES
+	bool "Show which keyboard halves are connected (dongle only)"
+	default y
+	depends on ZMK_SPLIT_ROLE_CENTRAL
+	help
+	  Two small keyboards: drawn with their keys when the half is connected, as a dotted
+	  outline when it is not. Which half is which is learned from the first key pressed on it.
 
-config KORZ_EPD_PET_RUN_WPM
-	int "Typing speed (WPM) from which the pet runs"
-	default 50
+config KORZ_EPD_SIDES_POLL_MS
+	int "How often to check the connection of the halves (ms)"
+	default 500
+	range 100 5000
+	depends on KORZ_EPD_SIDES
 
 endif # KORZ_EPD_SCREEN

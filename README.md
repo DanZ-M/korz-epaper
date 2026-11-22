@@ -6,7 +6,8 @@ screen can be changed or replaced without touching the keymap, the lights or the
 
 | File | What it is |
 |---|---|
-| `src/epd_screen.c` | The status screen: output (USB / Bluetooth), profile, battery, the layers on a sphere, the dog (by typing speed). One block per widget; add a widget by copying one. |
+| `src/epd_screen.c` | The status screen: output (USB / Bluetooth), profile, battery, the layers on a sphere with the volume arc (korz-media), the two keyboard halves. One block per widget; add a widget by copying one. |
+| `src/epd_layout.h` | Where everything goes on the 200x200 panel: one number per position |
 | `src/epd_icons.c/.h` | The pictures (generated, see below). |
 | `src/epd_refresh.c/.h` | Refresh policy: partial updates stay local; a clean-up of just the changed area (black, white, redraw) runs after a pause or a number of changes. |
 | `tools/gen_icons.py`, `tools/sphere.py` | Regenerate the pictures (Pillow + numpy). The sources of the old OLED icons are in `tools/legacy-icons`. |
@@ -32,7 +33,8 @@ screen can be changed or replaced without touching the keymap, the lights or the
 | `KORZ_EPD_FULL_AFTER_CHANGES` | 12 | ... or after this many changes in a row (0 = only when idle) |
 | `KORZ_EPD_CLEAN_LOCAL` | y | Clean only the changed area; n = whole panel flashes |
 | `KORZ_EPD_SCREEN` | | The status screen above (needs `ZMK_DISPLAY_STATUS_SCREEN_CUSTOM`) |
-| `KORZ_EPD_PET_WALK_WPM` / `_RUN_WPM` | 10 / 50 | Typing speeds for the dog |
+| `KORZ_EPD_SIDES` | y (dongle) | Two small keyboards at the bottom: keys = half connected, dotted = not. Which half is which is learned from the first key pressed on it |
+| `KORZ_EPD_SIDES_POLL_MS` | 500 | How often the connection is checked |
 
 ## Changing the pictures
 
@@ -45,4 +47,4 @@ dither at the rim are constants at its top. The layer order is the one of the ke
 
 - Widgets only call `lv_image_set_src` when the picture really changes (a change is a panel refresh).
 - Not here on purpose: anything about lights (keyfx), the motion sensor (korz-imu), the joystick (korz-joystick).
-- The old OLED icons and the dog come from HellTM's custom widgets (MIT).
+- The old OLED icons (battery, output, profile) come from HellTM's custom widgets (MIT).
