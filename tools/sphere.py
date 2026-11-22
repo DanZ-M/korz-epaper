@@ -5,12 +5,13 @@ FONT=next((f for f in (os.environ.get('SPHERE_FONT',''),
     '/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf',
     'C:/Windows/Fonts/arialnb.ttf','C:/Windows/Fonts/arialbd.ttf',
     '/Library/Fonts/Arial Bold.ttf') if f and os.path.exists(f)),None)   # any bold sans-serif TTF
-R=39.0; W_IMG,H_IMG=104,80; CX,CY=52.0,40.0
+K=float(os.environ.get('SPHERE_SCALE','0.9'))   # 1.0 = the first size (104x80)
+R=39.0*K; W_IMG,H_IMG=round(104*K),round(80*K); CX,CY=W_IMG/2.0,H_IMG/2.0
 SS=4               # supersampling of the output
 TS=4               # texture pixels per sphere pixel
 PITCH=0.76*R       # arc length between rows (rows are 0.76 rad apart)
-TEXT_W=64; CAP=21
-BAND=15.0          # half height of the dark band (pixels)
+TEXT_W=64*K; CAP=21*K
+BAND=15.0*K          # half height of the dark band (pixels)
 ORDER=['SYM','MOUSE','BASE','NUMB']          # top -> bottom
 LAYER_NAME={0:'BASE',1:'NUMB',2:'MOUSE',3:'SYM'}
 def row_img(name):
@@ -47,7 +48,7 @@ def texture(active_layer):
         tex.paste(r,(int(TW/2-r.width/2),int(yc-r.height/2)))
     return np.asarray(tex,dtype=np.float32)/255.0
 BAYER=np.array([[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]])
-def render(active_layer, chevrons=True):
+def render(active_layer, chevrons=False):
     n=SS
     H,W=H_IMG*n,W_IMG*n
     ys,xs=np.mgrid[0:H,0:W]
