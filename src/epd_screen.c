@@ -1,17 +1,14 @@
 /*
- * korz-epaper: status screen for the e-paper, made of the widgets of the old left OLED.
+ * korz-epaper: status screen for the e-paper.
  *
  *   top row   : output (USB / Bluetooth state), profile (USB or BLE 1..5), battery
- *   below     : the layers engraved on a sphere (active one in the dark band), and the dog
- *               (sits / walks / runs by typing speed)
+ *   middle    : the layers engraved on a sphere, with the volume arc around it (korz-media)
+ *   bottom    : the two keyboard halves, with keys when connected, dotted when not (dongle)
  *
- * Ported from HellTM's custom widgets (MIT) to the LVGL 9 API. The right half's widgets
- * (peripheral status, logos) are not part of it. Two changes for an e-paper panel:
- *  - the pet is a still picture that changes with the typing speed (no animation: every frame
- *    would be a panel refresh);
- *  - a widget redraws only when its picture really changes, so battery reports and WPM
- *    ticks do not refresh the panel.
- * Icons are in epd_icons.c (upright, 2x). Use with CONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y.
+ * The top-row widgets come from HellTM's custom widgets (MIT), ported to the LVGL 9 API.
+ * A widget redraws only when its picture really changes, so battery reports do not refresh
+ * the panel. Positions: epd_layout.h. Icons: epd_icons.c (tools/gen_icons.py).
+ * Use with CONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y.
  */
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -27,30 +24,31 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/ble.h>
 #include <zmk/endpoints.h>
 #include <zmk/keymap.h>
-#include <zmk/wpm.h>
 #include <zmk/events/battery_state_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
 #include <zmk/events/endpoint_changed.h>
 #include <zmk/events/ble_active_profile_changed.h>
 #include <zmk/events/layer_state_changed.h>
-#include <zmk/events/wpm_state_changed.h>
+#include <zmk/events/position_state_changed.h>
 
 #if IS_ENABLED(CONFIG_KORZ_MEDIA_VOLUME)
 #include <korz/media.h>
 #endif
 
 #include "epd_icons.h"
+#include "epd_layout.h"
+#if IS_ENABLED(CONFIG_KORZ_EPD_SIDES)
+#include <zmk/split/transport/central.h>
+#endif
 #include "epd_refresh.h"
 
 static lv_obj_t *battery_obj;
 static lv_obj_t *output_obj;
 static lv_obj_t *profile_obj;
 static lv_obj_t *layer_obj;
-static lv_obj_t *pet_obj;
-#if IS_ENABLED(CONFIG_KORZ_MEDIA_VOLUME)
-static lv_obj_t *vol_frame;
-static lv_obj_t *vol_fill;
-#endif
+static lv_obj_t *arc_obj;
+static lv_obj_t *half_l_obj;
+static lv_obj_t *half_r_obj;
 
 /* only touch LVGL when the picture changes: a changed picture is a panel refresh */
 static void show(lv_obj_t *obj, const lv_image_dsc_t *img)
@@ -203,65 +201,120 @@ static struct layer_state layer_get_state(const zmk_event_t *eh)
 ZMK_DISPLAY_WIDGET_LISTENER(epd_widget_layer, struct layer_state, layer_update, layer_get_state)
 ZMK_SUBSCRIPTION(epd_widget_layer, zmk_layer_state_changed);
 
-/* ---- pet (sits, walks or runs by typing speed) ---- */
-
-struct pet_state {
-	uint8_t mode; /* 0 sit, 1 walk, 2 run */
-};
-
-static void pet_update(struct pet_state s)
-{
-	show(pet_obj, s.mode == 0 ? &epd_pet_sit : (s.mode == 1 ? &epd_pet_walk : &epd_pet_run));
-}
-
-static struct pet_state pet_get_state(const zmk_event_t *eh)
-{
-	const struct zmk_wpm_state_changed *ev = as_zmk_wpm_state_changed(eh);
-	int wpm = (ev != NULL) ? ev->state : zmk_wpm_get_state();
-
-	return (struct pet_state){
-		.mode = wpm < CONFIG_KORZ_EPD_PET_WALK_WPM
-				? 0
-				: (wpm < CONFIG_KORZ_EPD_PET_RUN_WPM ? 1 : 2),
-	};
-}
-
-ZMK_DISPLAY_WIDGET_LISTENER(epd_widget_pet, struct pet_state, pet_update, pet_get_state)
-ZMK_SUBSCRIPTION(epd_widget_pet, zmk_wpm_state_changed);
-
 #if IS_ENABLED(CONFIG_KORZ_MEDIA_VOLUME)
-/* ---- volume: a bar, counted by korz-media (an estimate, empty when muted) ---- */
-
-#define VOL_W 24
-#define VOL_H 60
+/* ---- volume: 7 segments around the sphere, counted by korz-media (an estimate) ---- */
 
 struct volume_state {
-	uint8_t percent;
+	uint8_t level; /* 0..7 filled segments */
+	bool muted;
 };
 
 static void volume_update(struct volume_state s)
 {
-	int inner = VOL_H - 4; /* inside the 2 px frame */
-	int h = (inner * s.percent) / 100;
-
-	if (lv_obj_get_height(vol_fill) == h) {
-		return;
-	}
-	epd_refresh_touch(vol_frame);
-	lv_obj_set_height(vol_fill, h);
-	lv_obj_set_style_bg_opa(vol_fill, h > 0 ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_MAIN);
-	epd_refresh_touch(vol_frame);
-	epd_refresh_note();
+	show(arc_obj, s.muted ? &epd_arc_muted : epd_arc_icon[s.level]);
 }
 
 static struct volume_state volume_get_state(const zmk_event_t *eh)
 {
-	return (struct volume_state){.percent = korz_media_muted() ? 0 : korz_media_volume()};
+	int level = ((int)korz_media_volume() * 7 + 99) / 100; /* rounds up: 1 % already shows one */
+
+	return (struct volume_state){.level = MIN(level, 7), .muted = korz_media_muted()};
 }
 
 ZMK_DISPLAY_WIDGET_LISTENER(epd_widget_volume, struct volume_state, volume_update,
 			    volume_get_state)
 ZMK_SUBSCRIPTION(epd_widget_volume, korz_media_changed);
+#endif
+
+#if IS_ENABLED(CONFIG_KORZ_EPD_SIDES)
+/* ---- halves: which half of the keyboard is connected to the dongle ---- */
+
+#define MAX_SLOTS 4
+#define SIDE_UNKNOWN (-1)
+static int8_t slot_side[MAX_SLOTS] = {SIDE_UNKNOWN, SIDE_UNKNOWN, SIDE_UNKNOWN, SIDE_UNKNOWN};
+static uint8_t sides_shown = 0xFF; /* bit 0 left, bit 1 right, 0x80 = one half, side unknown */
+
+/* Corne positions: columns 0..5 of each row are the left half, thumbs 36..38 are the left */
+static bool position_is_left(uint32_t pos)
+{
+	return pos < 36 ? (pos % 12) < 6 : pos < 39;
+}
+
+/* A key pressed on a half tells us which half is behind that connection slot. */
+static int on_position(const zmk_event_t *eh)
+{
+	const struct zmk_position_state_changed *ev = as_zmk_position_state_changed(eh);
+
+	if (ev != NULL && ev->source < MAX_SLOTS) {
+		slot_side[ev->source] = position_is_left(ev->position) ? 0 : 1;
+	}
+	return ZMK_EV_EVENT_BUBBLE;
+}
+
+ZMK_LISTENER(epd_sides_position, on_position);
+ZMK_SUBSCRIPTION(epd_sides_position, zmk_position_state_changed);
+
+static uint8_t sides_connected(void)
+{
+	bool up[MAX_SLOTS] = {false};
+	uint8_t ids[8];
+	int count = 0;
+
+	STRUCT_SECTION_FOREACH(zmk_split_transport_central, t) {
+		if (t->api->get_available_source_ids == NULL) {
+			continue;
+		}
+		int n = t->api->get_available_source_ids(ids);
+
+		for (int i = 0; i < n && i < (int)ARRAY_SIZE(ids); i++) {
+			if (ids[i] < MAX_SLOTS && !up[ids[i]]) {
+				up[ids[i]] = true;
+				count++;
+			}
+		}
+	}
+
+	uint8_t mask = 0;
+	int unknown = 0;
+
+	for (int i = 0; i < MAX_SLOTS; i++) {
+		if (!up[i]) {
+			slot_side[i] = SIDE_UNKNOWN; /* a slot can be reused by the other half later */
+		} else if (slot_side[i] != SIDE_UNKNOWN) {
+			mask |= 1 << slot_side[i];
+		} else {
+			unknown++;
+		}
+	}
+	if (unknown > 0) {
+		if (count >= 2) {
+			mask = 0x03; /* both halves are connected, whichever slot is which */
+		} else if (mask == 0) {
+			mask = 0x80; /* one half, and it has not sent a key yet */
+		}
+	}
+	return mask;
+}
+
+static void sides_apply(uint8_t mask)
+{
+	if (mask == sides_shown) {
+		return;
+	}
+	sides_shown = mask;
+	show(half_l_obj, (mask & 0x01) ? &epd_half_l_on : &epd_half_l_off);
+	show(half_r_obj, (mask & 0x02) ? &epd_half_r_on : &epd_half_r_off);
+}
+
+static void sides_poll_fn(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(sides_poll_work, sides_poll_fn);
+
+static void sides_poll_fn(struct k_work *work)
+{
+	sides_apply(sides_connected());
+	k_work_reschedule_for_queue(zmk_display_work_q(), &sides_poll_work,
+				    K_MSEC(CONFIG_KORZ_EPD_SIDES_POLL_MS));
+}
 #endif
 
 /* ---- the screen (200 x 200) ---- */
@@ -277,44 +330,37 @@ lv_obj_t *zmk_display_status_screen(void)
 	output_obj = lv_image_create(screen);
 	profile_obj = lv_image_create(screen);
 	battery_obj = lv_image_create(screen);
-	pet_obj = lv_image_create(screen);
 	layer_obj = lv_image_create(screen);
-
-#if IS_ENABLED(CONFIG_KORZ_MEDIA_VOLUME)
-	vol_frame = lv_obj_create(screen);
-	lv_obj_remove_style_all(vol_frame);
-	lv_obj_set_size(vol_frame, VOL_W, VOL_H);
-	lv_obj_set_style_bg_opa(vol_frame, LV_OPA_COVER, LV_PART_MAIN);
-	lv_obj_set_style_bg_color(vol_frame, lv_color_white(), LV_PART_MAIN);
-	lv_obj_set_style_border_width(vol_frame, 2, LV_PART_MAIN);
-	lv_obj_set_style_border_color(vol_frame, lv_color_black(), LV_PART_MAIN);
-	lv_obj_set_style_pad_all(vol_frame, 0, LV_PART_MAIN);
-	lv_obj_clear_flag(vol_frame, LV_OBJ_FLAG_SCROLLABLE);
-
-	vol_fill = lv_obj_create(vol_frame);
-	lv_obj_remove_style_all(vol_fill);
-	lv_obj_set_size(vol_fill, VOL_W - 4, 0);
-	lv_obj_set_style_bg_color(vol_fill, lv_color_black(), LV_PART_MAIN);
-	lv_obj_set_style_bg_opa(vol_fill, LV_OPA_TRANSP, LV_PART_MAIN);
-	lv_obj_align(vol_fill, LV_ALIGN_BOTTOM_MID, 0, 0);
-#endif
+	arc_obj = lv_image_create(screen); /* after the sphere: drawn over it, white is see-through */
+	half_l_obj = lv_image_create(screen);
+	half_r_obj = lv_image_create(screen);
 
 	/* the pictures first (the sizes are needed to place them), then the places */
 	epd_widget_output_init();
 	epd_widget_profile_init();
 	epd_widget_battery_init();
 	epd_widget_layer_init();
-	epd_widget_pet_init();
 #if IS_ENABLED(CONFIG_KORZ_MEDIA_VOLUME)
 	epd_widget_volume_init();
-	lv_obj_align(vol_frame, LV_ALIGN_BOTTOM_RIGHT, -14, -10);
+#endif
+#if IS_ENABLED(CONFIG_KORZ_EPD_SIDES)
+	sides_apply(sides_connected());
+	k_work_reschedule_for_queue(zmk_display_work_q(), &sides_poll_work,
+				    K_MSEC(CONFIG_KORZ_EPD_SIDES_POLL_MS));
+#else
+	lv_image_set_src(half_l_obj, &epd_half_l_off);
+	lv_image_set_src(half_r_obj, &epd_half_r_off);
 #endif
 
-	lv_obj_align(output_obj, LV_ALIGN_TOP_LEFT, 8, 8);
-	lv_obj_align(profile_obj, LV_ALIGN_TOP_LEFT, 56, 14);
-	lv_obj_align(battery_obj, LV_ALIGN_TOP_RIGHT, -8, 8);
-	lv_obj_align(layer_obj, LV_ALIGN_TOP_RIGHT, -2, 46);
-	lv_obj_align(pet_obj, LV_ALIGN_BOTTOM_LEFT, 8, -8);
+	lv_obj_align(output_obj, LV_ALIGN_TOP_LEFT, EPD_OUTPUT_X, EPD_OUTPUT_Y);
+	lv_obj_align(profile_obj, LV_ALIGN_TOP_LEFT, EPD_PROFILE_X, EPD_PROFILE_Y);
+	lv_obj_align(battery_obj, LV_ALIGN_TOP_RIGHT, -EPD_BATTERY_MARGIN_X, EPD_BATTERY_Y);
+	lv_obj_align(layer_obj, LV_ALIGN_TOP_LEFT, EPD_SPHERE_CX - EPD_SPHERE_W / 2,
+		     EPD_SPHERE_CY - EPD_SPHERE_H / 2);
+	lv_obj_align(arc_obj, LV_ALIGN_TOP_LEFT, EPD_SPHERE_CX - EPD_ARC_CX,
+		     EPD_SPHERE_CY - EPD_ARC_CY);
+	lv_obj_align(half_l_obj, LV_ALIGN_TOP_LEFT, EPD_HALF_MARGIN_X, EPD_HALF_Y);
+	lv_obj_align(half_r_obj, LV_ALIGN_TOP_RIGHT, -EPD_HALF_MARGIN_X, EPD_HALF_Y);
 
 	return screen;
 }
