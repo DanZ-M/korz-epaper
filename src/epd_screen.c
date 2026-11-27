@@ -232,7 +232,7 @@ ZMK_SUBSCRIPTION(epd_widget_volume, korz_media_changed);
 #define MAX_SLOTS 4
 #define SIDE_UNKNOWN (-1)
 static int8_t slot_side[MAX_SLOTS] = {SIDE_UNKNOWN, SIDE_UNKNOWN, SIDE_UNKNOWN, SIDE_UNKNOWN};
-static uint8_t sides_shown = 0xFF; /* bit 0 left, bit 1 right, 0x80 = one half, side unknown */
+static uint8_t sides_shown = 0xFF; /* bit 0 left, bit 1 right, side not known yet: both shown */
 
 /* Corne positions: columns 0..5 of each row are the left half, thumbs 36..38 are the left */
 static bool position_is_left(uint32_t pos)
@@ -286,9 +286,21 @@ static uint8_t sides_connected(void)
 		dbg_up_mask |= up[i] ? BIT(i) : 0;
 	}
 
+	/* A half that drops gets its own slot back when it returns, so what we learned stays valid
+	   while the other half is still connected. Forget it only when both are gone. */
+	if (count == 0) {
+		for (int i = 0; i < MAX_SLOTS; i++) {
+			slot_side[i] = SIDE_UNKNOWN;
+		}
+	}
+
+	int known_gone = SIDE_UNKNOWN; /* side of a slot that is known but not connected */
+
 	for (int i = 0; i < MAX_SLOTS; i++) {
 		if (!up[i]) {
-			slot_side[i] = SIDE_UNKNOWN; /* a slot can be reused by the other half later */
+			if (slot_side[i] != SIDE_UNKNOWN) {
+				known_gone = slot_side[i];
+			}
 		} else if (slot_side[i] != SIDE_UNKNOWN) {
 			mask |= 1 << slot_side[i];
 		} else {
@@ -298,8 +310,10 @@ static uint8_t sides_connected(void)
 	if (unknown > 0) {
 		if (count >= 2) {
 			mask = 0x03; /* both halves are connected, whichever slot is which */
+		} else if (known_gone != SIDE_UNKNOWN) {
+			mask = 1 << (1 - known_gone); /* the other half is gone, so this one is the rest */
 		} else if (mask == 0) {
-			mask = 0x80; /* one half, and it has not sent a key yet */
+			mask = 0x03; /* one half, side not known yet: show both until a key is pressed */
 		}
 	}
 	return mask;
