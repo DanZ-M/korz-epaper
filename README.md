@@ -33,7 +33,7 @@ screen can be changed or replaced without touching the keymap, the lights or the
 | `KORZ_EPD_FULL_AFTER_CHANGES` | 12 | ... or after this many changes in a row (0 = only when idle) |
 | `KORZ_EPD_CLEAN_LOCAL` | y | Clean only the changed area; n = whole panel flashes |
 | `KORZ_EPD_SCREEN` | | The status screen above (needs `ZMK_DISPLAY_STATUS_SCREEN_CUSTOM`) |
-| `KORZ_EPD_SIDES` | y (dongle) | Two small keyboards at the bottom: keys = half connected, dotted = not. Which half is which is learned from the first key pressed on it |
+| `KORZ_EPD_SIDES` | y (dongle) | Two small keyboards at the bottom: keys = half connected, dashed contour with a cross = not. Which half is which is learned from the first key pressed on it |
 | `KORZ_EPD_SIDES_POLL_MS` | 500 | How often the connection is checked |
 
 ## Changing the pictures

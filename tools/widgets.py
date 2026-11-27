@@ -81,3 +81,44 @@ def half(side, connected):
                     if 0 <= xx < HALF_W and 0 <= yy < HALF_H:
                         px[xx, yy] = 0
     return im
+
+
+def _outline(side):
+    """Contour of one half (stair-stepped over the columns and the thumb keys), clockwise."""
+    xl = [max(0, c * PITCH - 1) for c in range(6)]
+    xr = [c * PITCH + KEY for c in range(6)]
+    top = [max(0, OFFS[c] - 1) for c in range(6)]
+    bot = [OFFS[c] + 2 * PITCH + KEY + 1 for c in range(6)]
+    p = []
+    for c in range(6):
+        p += [(xl[c], top[c]), (xr[c], top[c])]
+    p += [(xr[5], 36), (xl[3], 36)]
+    for c in (2, 1, 0):
+        p += [(xr[c], bot[c]), (xl[c], bot[c])]
+    if side == 'R':
+        p = [(HALF_W - 1 - x, y) for x, y in p]
+    return p
+
+def half_lost(side):
+    """Half not connected: short dashes along the contour and a bold X over it."""
+    k = SS
+    im = Image.new('L', (HALF_W * k, HALF_H * k), 255)
+    d = ImageDraw.Draw(im)
+    pts = _outline(side)
+    pts.append(pts[0])
+    s = 0.0
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        n = max(1, int(math.hypot(x1 - x0, y1 - y0) * k))
+        for i in range(n):
+            t = i / n
+            if int((s + t * math.hypot(x1 - x0, y1 - y0)) // 3) % 2 == 0:
+                x, y = (x0 + (x1 - x0) * t) * k, (y0 + (y1 - y0) * t) * k
+                d.rectangle([x - k / 2, y - k / 2, x + k / 2, y + k / 2], fill=0)
+        s += math.hypot(x1 - x0, y1 - y0)
+    a, b = 8.0, 6.0
+    for (p0, p1) in (((a, b), (HALF_W - a, HALF_H - b)), ((HALF_W - a, b), (a, HALF_H - b))):
+        q = [(p0[0] * k, p0[1] * k), (p1[0] * k, p1[1] * k)]
+        d.line(q, fill=255, width=int(5.0 * k))     # white halo: the dashes do not touch the X
+        d.line(q, fill=0, width=int(2.4 * k))
+    small = im.resize((HALF_W, HALF_H), Image.BOX)
+    return small.point(lambda v: 0 if v < 140 else 255).convert('1', dither=Image.NONE)

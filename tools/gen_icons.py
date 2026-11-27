@@ -62,8 +62,8 @@ see_through=set()
 for lv in range(widgets.SEGMENTS+1):
     items.append(('epd_arc_%d'%lv,widgets.arc(lv,False)));see_through.add('epd_arc_%d'%lv)
 items.append(('epd_arc_muted',widgets.arc(0,True)));see_through.add('epd_arc_muted')
-items+=[('epd_half_l_on',widgets.half('L',True)),('epd_half_l_off',widgets.half('L',False)),
-        ('epd_half_r_on',widgets.half('R',True)),('epd_half_r_off',widgets.half('R',False))]
+items+=[('epd_half_l_on',widgets.half('L',True)),('epd_half_l_off',widgets.half_lost('L')),
+        ('epd_half_r_on',widgets.half('R',True)),('epd_half_r_off',widgets.half_lost('R'))]
 c=['''/*
  * korz-epaper: icons for the e-paper status screen (generated, 1-bit indexed LVGL 9 images:
  * white = 0, black = 1).
