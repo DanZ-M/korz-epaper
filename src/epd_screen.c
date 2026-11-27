@@ -254,6 +254,9 @@ static int on_position(const zmk_event_t *eh)
 ZMK_LISTENER(epd_sides_position, on_position);
 ZMK_SUBSCRIPTION(epd_sides_position, zmk_position_state_changed);
 
+static uint8_t dbg_up_mask; /* connection slots the central reports as connected (for the log) */
+static int dbg_count;
+
 static uint8_t sides_connected(void)
 {
 	bool up[MAX_SLOTS] = {false};
@@ -276,6 +279,12 @@ static uint8_t sides_connected(void)
 
 	uint8_t mask = 0;
 	int unknown = 0;
+
+	dbg_count = count;
+	dbg_up_mask = 0;
+	for (int i = 0; i < MAX_SLOTS; i++) {
+		dbg_up_mask |= up[i] ? BIT(i) : 0;
+	}
 
 	for (int i = 0; i < MAX_SLOTS; i++) {
 		if (!up[i]) {
@@ -311,7 +320,18 @@ static K_WORK_DELAYABLE_DEFINE(sides_poll_work, sides_poll_fn);
 
 static void sides_poll_fn(struct k_work *work)
 {
-	sides_apply(sides_connected());
+	static uint8_t last_mask = 0xEE;
+	static int polls;
+	uint8_t mask = sides_connected();
+
+	/* log when anything changes, and every 10 s to show the poll is alive */
+	if (mask != last_mask || (++polls % 20) == 0) {
+		LOG_INF("sides: connected slots 0x%02x (%d), side of slot 0..3 = %d %d %d %d, shown 0x%02x",
+			dbg_up_mask, dbg_count, slot_side[0], slot_side[1], slot_side[2], slot_side[3],
+			mask);
+		last_mask = mask;
+	}
+	sides_apply(mask);
 	k_work_reschedule_for_queue(zmk_display_work_q(), &sides_poll_work,
 				    K_MSEC(CONFIG_KORZ_EPD_SIDES_POLL_MS));
 }
